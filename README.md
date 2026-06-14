@@ -1,11 +1,11 @@
 # Privacy-first WFH Employee Face Verification
 
-Full-stack React + Express + PostgreSQL application for workstation presence checks. Face detection and recognition run entirely in the browser with `face-api.js`; raw webcam frames are never uploaded or stored.
+Full-stack React + Express + MySQL application for workstation presence checks. Face detection and recognition run entirely in the browser with `face-api.js`; raw webcam frames are never uploaded or stored.
 
 ## Privacy guarantees
 - Browser performs all inference using models served from `client/public/models`.
 - Enrollment sends only one averaged 128-dimension embedding to the API.
-- The API stores only AES-256-GCM encrypted embeddings in PostgreSQL.
+- The API stores only AES-256-GCM encrypted embeddings in MySQL.
 - Background checks send only `{ employeeId, status, timestamp }`.
 - Status can be `VERIFIED`, `AWAY`, `UNKNOWN_FACE`, or non-punitive `CAMERA_ERROR`.
 - Users can delete enrollment data from `/settings`.
@@ -14,7 +14,11 @@ Full-stack React + Express + PostgreSQL application for workstation presence che
 Server variables:
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/wfh_watchface
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_mysql_root_password
+DB_NAME=wfh_watchface
 JWT_SECRET=replace-me
 EMBEDDING_ENCRYPTION_KEY=32+ bytes of secret material
 CLIENT_ORIGIN=http://localhost:5173
@@ -37,7 +41,7 @@ VITE_API_URL=http://localhost:4000
 ```bash
 npm install
 npm run install:all
-psql "$DATABASE_URL" -f db/migrations/001_initial.sql
+node db/setup.js
 npm run dev
 ```
 
@@ -45,7 +49,7 @@ Add `ssd_mobilenetv1`, `face_landmark_68`, and `face_recognition` model files un
 
 ## Development login
 
-Create employees in PostgreSQL, then call:
+Create employees in MySQL, then call:
 
 ```bash
 curl -X POST http://localhost:4000/api/auth/dev-login \

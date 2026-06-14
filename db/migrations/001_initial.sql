@@ -1,7 +1,41 @@
-create extension if not exists "uuid-ossp";
-do $$ begin create type status_code as enum ('VERIFIED','AWAY','UNKNOWN_FACE','CAMERA_ERROR'); exception when duplicate_object then null; end $$;
-create table if not exists employees (id uuid primary key default uuid_generate_v4(), name text not null, email text unique not null, role text not null check (role in ('employee','manager','admin')), department text, manager_id uuid references employees(id), created_at timestamptz not null default now());
-create table if not exists face_embeddings (id uuid primary key default uuid_generate_v4(), employee_id uuid not null references employees(id) on delete cascade, embedding_encrypted bytea not null, iv text not null, created_at timestamptz not null default now());
-create table if not exists status_logs (id uuid primary key default uuid_generate_v4(), employee_id uuid not null references employees(id) on delete cascade, status status_code not null, checked_at timestamptz not null default now());
-create table if not exists alerts (id uuid primary key default uuid_generate_v4(), employee_id uuid not null references employees(id) on delete cascade, triggered_at timestamptz not null default now(), acknowledged boolean not null default false, acknowledged_at timestamptz);
-create index if not exists idx_status_logs_employee_checked on status_logs(employee_id, checked_at desc);
+CREATE DATABASE IF NOT EXISTS wfh_watchface;
+USE wfh_watchface;
+
+CREATE TABLE IF NOT EXISTS employees (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  role VARCHAR(50) NOT NULL CHECK (role IN ('employee','manager','admin')),
+  department VARCHAR(255),
+  manager_id CHAR(36),
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (manager_id) REFERENCES employees(id)
+);
+
+CREATE TABLE IF NOT EXISTS face_embeddings (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  employee_id CHAR(36) NOT NULL,
+  embedding_encrypted LONGBLOB NOT NULL,
+  iv TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS status_logs (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  employee_id CHAR(36) NOT NULL,
+  status ENUM('VERIFIED','AWAY','UNKNOWN_FACE','CAMERA_ERROR') NOT NULL,
+  checked_at DATETIME NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  employee_id CHAR(36) NOT NULL,
+  triggered_at DATETIME NOT NULL DEFAULT NOW(),
+  acknowledged TINYINT(1) NOT NULL DEFAULT 0,
+  acknowledged_at DATETIME,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_status_logs_employee_checked ON status_logs(employee_id, checked_at DESC);
