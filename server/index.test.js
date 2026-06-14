@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import { encryptEmbedding, decryptEmbedding } from './services/encryptionService.js';
+test('embedding encryption round-trips without plaintext storage',()=>{const e=Array.from({length:128},(_,i)=>i/128);const out=encryptEmbedding(e);assert.ok(Buffer.isBuffer(out.encrypted));assert.notEqual(out.encrypted.toString(),JSON.stringify(e));assert.deepEqual(decryptEmbedding(out.encrypted,out.iv),e);});

@@ -1,0 +1,1 @@
+{"scripts":{"install:all":"npm --prefix server install && npm --prefix client install","dev":"npm --prefix server run dev","test":"npm --prefix server test && npm --prefix client run build"}}

@@ -1,0 +1,4 @@
+import crypto from 'crypto';
+const key=()=>crypto.createHash('sha256').update(process.env.EMBEDDING_ENCRYPTION_KEY||'dev-only-change-me').digest();
+export function encryptEmbedding(embedding){const iv=crypto.randomBytes(16);const cipher=crypto.createCipheriv('aes-256-gcm',key(),iv);const json=JSON.stringify(embedding);const encrypted=Buffer.concat([cipher.update(json,'utf8'),cipher.final()]);const tag=cipher.getAuthTag();return { encrypted:Buffer.concat([tag,encrypted]), iv:iv.toString('base64') };}
+export function decryptEmbedding(buffer, ivText){const payload=Buffer.from(buffer);const tag=payload.subarray(0,16);const encrypted=payload.subarray(16);const decipher=crypto.createDecipheriv('aes-256-gcm',key(),Buffer.from(ivText,'base64'));decipher.setAuthTag(tag);return JSON.parse(Buffer.concat([decipher.update(encrypted),decipher.final()]).toString('utf8'));}
