@@ -34,10 +34,16 @@ VITE_API_URL=http://localhost:4000
 
 ## Setup
 
+Install dependencies:
+
 ```bash
 npm install
 npm run install:all
-psql "$DATABASE_URL" -f db/migrations/001_initial.sql
+```
+
+Create the database with your normal database app, run `db/migrations/001_initial.sql` in its SQL editor, then start the app:
+
+```bash
 npm run dev
 ```
 
@@ -76,20 +82,23 @@ Install the following tools on your machine:
 
 ### 2. Create the database
 
-```bash
-createdb wfh_watchface
-export DATABASE_URL=postgres://postgres:postgres@localhost:5432/wfh_watchface
-psql "$DATABASE_URL" -f db/migrations/001_initial.sql
-```
+Create a PostgreSQL database named `wfh_watchface` using your normal database app, for example pgAdmin, TablePlus, DBeaver, DataGrip, or your hosting provider dashboard.
 
-If your PostgreSQL username, password, host, or port is different, update `DATABASE_URL` accordingly.
+Then open the SQL editor for that database, paste the contents of `db/migrations/001_initial.sql`, and run it.
+
+Use this connection string later in `server/.env`; adjust the username, password, host, or port for your computer:
+
+```text
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/wfh_watchface
+```
 
 ### 3. Seed demo employees
 
 Create one manager and one employee so you can log in and view both employee and manager pages:
 
-```bash
-psql "$DATABASE_URL" <<'SQL'
+Open your database SQL editor, paste this SQL, and run it:
+
+```sql
 insert into employees (id, name, email, role, department)
 values ('00000000-0000-0000-0000-000000000010', 'Morgan Manager', 'manager@example.com', 'manager', 'Operations')
 on conflict (email) do nothing;
@@ -97,7 +106,6 @@ on conflict (email) do nothing;
 insert into employees (id, name, email, role, department, manager_id)
 values ('00000000-0000-0000-0000-000000000001', 'Erin Employee', 'employee@example.com', 'employee', 'Operations', '00000000-0000-0000-0000-000000000010')
 on conflict (email) do nothing;
-SQL
 ```
 
 ### 4. Configure the server
