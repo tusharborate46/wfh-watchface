@@ -12,15 +12,17 @@ export function useFaceVerification(employeeId, enabled=true){
  const runCheck=useCallback(async()=>{
   let stream;
   try{
-   alert('Privacy notice: camera will activate for 1.5 seconds. Please blink once for liveness. No images leave this device.');
+   alert('Privacy notice: camera will activate for 4 seconds. Please blink once for liveness. No images leave this device.');
    stream=await openCamera(); setCameraActive(true);
    const video=document.createElement('video'); video.muted=true; video.srcObject=stream; await video.play();
    const blinked=createBlinkTracker();
-   let detection=null; let live=false; const end=Date.now()+1500;
-   while(Date.now()<end){ detection=await detectDescriptor(video); if(detection) live=blinked(detection.landmarks)||live; await new Promise(r=>setTimeout(r,200)); }
+   let detection=null; let live=false; const end=Date.now()+4000;
+   while(Date.now()<end){ const current=await detectDescriptor(video); if(current){ detection=current; live=blinked(current.landmarks)||live; } await new Promise(r=>setTimeout(r,200)); }
    let status='AWAY';
-   if(detection && !live){ status='UNKNOWN_FACE'; }
-   else if(detection){ const { embedding }=await api('/api/enrollment/me'); const distance=euclideanDistance(Array.from(detection.descriptor), embedding); status=statusFromDistance(distance); }
+   if(detection){
+    if(!live){ status='AWAY'; }
+    else { const { embedding }=await api('/api/enrollment/me'); const distance=euclideanDistance(Array.from(detection.descriptor), embedding); status=statusFromDistance(distance); }
+   }
    if(!STATUSES.includes(status)) status='AWAY';
    await api('/api/status',{method:'POST',body:JSON.stringify({ employeeId, status, timestamp:new Date().toISOString() })}); setLastStatus(status);
   }catch(e){ await api('/api/status',{method:'POST',body:JSON.stringify({ employeeId, status:'CAMERA_ERROR', timestamp:new Date().toISOString() })}).catch(()=>{}); setLastStatus('CAMERA_ERROR'); }

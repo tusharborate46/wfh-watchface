@@ -38,4 +38,19 @@ CREATE TABLE IF NOT EXISTS alerts (
   FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_status_logs_employee_checked ON status_logs(employee_id, checked_at DESC);
+DROP PROCEDURE IF EXISTS create_index_if_not_exists;
+DELIMITER //
+CREATE PROCEDURE create_index_if_not_exists()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name = 'status_logs'
+      AND index_name = 'idx_status_logs_employee_checked'
+  ) THEN
+    CREATE INDEX idx_status_logs_employee_checked ON status_logs(employee_id, checked_at DESC);
+  END IF;
+END //
+DELIMITER ;
+CALL create_index_if_not_exists();
+DROP PROCEDURE IF EXISTS create_index_if_not_exists;
