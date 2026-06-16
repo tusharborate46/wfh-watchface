@@ -12,7 +12,7 @@ export function eyeAspectRatio(landmarks) {
   return (ear(landmarks.getLeftEye()) + ear(landmarks.getRightEye())) / 2;
 }
 
-export function createBlinkTracker(threshold = 0.21) {
+export function createBlinkTracker(threshold = 0.15) {
   let openSeen = false;
   let closedSeen = false;
   let blinkConfirmed = false;
@@ -21,9 +21,11 @@ export function createBlinkTracker(threshold = 0.21) {
     if (!landmarks || blinkConfirmed) return blinkConfirmed;
 
     const value = eyeAspectRatio(landmarks);
-    if (value > threshold + 0.04) openSeen = true;
+    console.log('EAR value:', value.toFixed(3));
+
+    if (value > 0.18) openSeen = true;
     if (openSeen && value < threshold) closedSeen = true;
-    if (closedSeen && value > threshold + 0.03) blinkConfirmed = true;
+    if (closedSeen && value > 0.18) blinkConfirmed = true;
 
     return blinkConfirmed;
   };

@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { api } from '../utils/api';
 import { averageDescriptors, detectDescriptor } from '../utils/faceapi-loader';
-import { createBlinkTracker } from '../utils/liveness';
 
 function stop(stream) {
   stream?.getTracks().forEach((track) => track.stop());
@@ -15,7 +14,7 @@ export default function EnrollPage() {
   async function enroll() {
     let stream;
     try {
-      setMsg('Camera active. Please blink once and face the camera for 10 seconds.');
+      setMsg('Camera active. Please face the camera for 10 seconds. Blink is optional.');
       stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       setActive(true);
 
@@ -26,23 +25,23 @@ export default function EnrollPage() {
       await video.play();
 
       const samples = [];
-      const blinked = createBlinkTracker();
-      let live = false;
       const end = Date.now() + 10000;
 
       while (Date.now() < end) {
         const detection = await detectDescriptor(video);
         if (detection) {
-          live = blinked(detection.landmarks) || live;
           samples.push(Array.from(detection.descriptor));
+          setMsg(`Face detected! Capturing samples: ${samples.length}/5`);
         }
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      if (!live) throw new Error('Blink liveness check was not confirmed. Please retry and blink once.');
-      if (samples.length < 3) throw new Error('Not enough face samples captured.');
+      if (samples.length < 3) throw new Error(`Not enough face samples captured (got ${samples.length}, need 3). Make sure your face is visible.`);
 
-      await api('/api/enrollment', { method: 'POST', body: JSON.stringify({ embedding: averageDescriptors(samples) }) });
+      await api('/api/enrollment', {
+        method: 'POST',
+        body: JSON.stringify({ embedding: averageDescriptors(samples) })
+      });
       setMsg('Enrollment complete. Camera closed.');
     } catch (err) {
       console.error(err);
@@ -62,8 +61,17 @@ export default function EnrollPage() {
           {active && <span className="h-4 w-4 animate-pulse rounded-full bg-red-500" title="camera active" />}
         </div>
         <p className="my-4 text-slate-300">{msg}</p>
-        <video ref={videoRef} className={`mb-4 aspect-video w-full rounded-xl bg-slate-950 ${active ? 'block' : 'hidden'}`} autoPlay muted playsInline />
-        <button className="btn" disabled={active} onClick={enroll} type="button">Start 10-second enrollment</button>
+        <video
+          ref={videoRef}
+          className={`mb-4 w-full rounded-xl bg-slate-950 ${active ? 'block' : 'hidden'}`}
+          style={{ height: '300px', objectFit: 'cover' }}
+          autoPlay
+          muted
+          playsInline
+        />
+        <button className="btn" disabled={active} onClick={enroll} type="button">
+          {active ? 'Enrolling...' : 'Start 10-second enrollment'}
+        </button>
       </div>
     </main>
   );
