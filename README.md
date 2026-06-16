@@ -11,6 +11,9 @@ Full-stack React + Express + MySQL application for workstation presence checks. 
 - Users can delete enrollment data from `/settings`.
 
 ## Environment
+
+Copy `.env.example` to `.env` for the server and copy the client variables into `client/.env` when running Vite locally.
+
 Server variables:
 
 ```bash
@@ -22,6 +25,7 @@ DB_NAME=wfh_watchface
 JWT_SECRET=replace-me
 EMBEDDING_ENCRYPTION_KEY=32+ bytes of secret material
 CLIENT_ORIGIN=http://localhost:5173
+PORT=4000
 ALERT_WEBHOOK_URL=https://example.com/webhook # optional
 SMTP_HOST=smtp.example.com # optional fallback
 SMTP_PORT=587
@@ -45,9 +49,52 @@ node db/setup.js
 npm run dev
 ```
 
-Add `ssd_mobilenetv1`, `face_landmark_68`, and `face_recognition` model files under `client/public/models` before using enrollment or verification.
+## face-api.js models
+
+The app does not upload raw frames; the browser loads `face-api.js` model files locally from `client/public/models`. Before enrollment or verification, download the following model manifests and shard files from the official `face-api.js` weights directory and place them directly in `client/public/models`:
+
+- `ssd_mobilenetv1_model-weights_manifest.json`
+- `ssd_mobilenetv1_model-shard1`
+- `face_landmark_68_model-weights_manifest.json`
+- `face_landmark_68_model-shard1`
+- `face_recognition_model-weights_manifest.json`
+- `face_recognition_model-shard1`
+- `face_recognition_model-shard2`
+
+Example:
+
+```bash
+mkdir -p client/public/models
+curl -L -o client/public/models/ssd_mobilenetv1_model-weights_manifest.json https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/ssd_mobilenetv1_model-weights_manifest.json
+curl -L -o client/public/models/ssd_mobilenetv1_model-shard1 https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/ssd_mobilenetv1_model-shard1
+curl -L -o client/public/models/face_landmark_68_model-weights_manifest.json https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_landmark_68_model-weights_manifest.json
+curl -L -o client/public/models/face_landmark_68_model-shard1 https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_landmark_68_model-shard1
+curl -L -o client/public/models/face_recognition_model-weights_manifest.json https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_recognition_model-weights_manifest.json
+curl -L -o client/public/models/face_recognition_model-shard1 https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_recognition_model-shard1
+curl -L -o client/public/models/face_recognition_model-shard2 https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/face_recognition_model-shard2
+```
+
+## Database
+
+Create the schema with the SQL script in `db/schema.sql` or run:
+
+```bash
+node db/setup.js
+```
+
+The schema includes indexes used by the dashboard query:
+
+```sql
+INDEX idx_employees_manager_name (manager_id, name)
+INDEX idx_status_logs_employee_checked (employee_id, checked_at)
+INDEX idx_status_logs_checked (checked_at)
+INDEX idx_alerts_triggered (triggered_at)
+INDEX idx_alerts_employee_triggered (employee_id, triggered_at)
+```
 
 ## Development login
+
+The `/api/auth/dev-login` endpoint is for local development only and must be removed or protected before production.
 
 Create employees in MySQL, then call:
 

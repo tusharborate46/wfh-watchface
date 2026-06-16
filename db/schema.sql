@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS employees (
   department VARCHAR(255),
   manager_id CHAR(36),
   created_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (manager_id) REFERENCES employees(id)
+  INDEX idx_employees_manager_name (manager_id, name),
+  CONSTRAINT fk_employees_manager FOREIGN KEY (manager_id) REFERENCES employees(id)
 );
 
 CREATE TABLE IF NOT EXISTS face_embeddings (
@@ -18,7 +19,9 @@ CREATE TABLE IF NOT EXISTS face_embeddings (
   embedding_encrypted LONGBLOB NOT NULL,
   iv TEXT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+  UNIQUE KEY uq_face_embeddings_employee (employee_id),
+  INDEX idx_face_embeddings_employee_created (employee_id, created_at),
+  CONSTRAINT fk_face_embeddings_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS status_logs (
@@ -26,7 +29,9 @@ CREATE TABLE IF NOT EXISTS status_logs (
   employee_id CHAR(36) NOT NULL,
   status ENUM('VERIFIED','AWAY','UNKNOWN_FACE','CAMERA_ERROR') NOT NULL,
   checked_at DATETIME NOT NULL DEFAULT NOW(),
-  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+  INDEX idx_status_logs_employee_checked (employee_id, checked_at),
+  INDEX idx_status_logs_checked (checked_at),
+  CONSTRAINT fk_status_logs_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS alerts (
@@ -35,7 +40,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   triggered_at DATETIME NOT NULL DEFAULT NOW(),
   acknowledged TINYINT(1) NOT NULL DEFAULT 0,
   acknowledged_at DATETIME,
-  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+  INDEX idx_alerts_triggered (triggered_at),
+  INDEX idx_alerts_employee_triggered (employee_id, triggered_at),
+  CONSTRAINT fk_alerts_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
-
-CREATE INDEX IF NOT EXISTS idx_status_logs_employee_checked ON status_logs(employee_id, checked_at DESC);
