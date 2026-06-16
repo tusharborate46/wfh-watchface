@@ -37,5 +37,3 @@ CREATE TABLE IF NOT EXISTS alerts (
   acknowledged_at DATETIME,
   FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
-
-CREATE INDEX IF NOT EXISTS idx_status_logs_employee_checked ON status_logs(employee_id, checked_at DESC);
