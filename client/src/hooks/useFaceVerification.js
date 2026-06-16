@@ -3,7 +3,7 @@ import { api } from '../utils/api';
 import { detectDescriptor } from '../utils/faceapi-loader';
 import { euclideanDistance, statusFromDistance } from '../utils/distance';
 import { createBlinkTracker } from '../utils/liveness';
-const STATUSES = ['VERIFIED','AWAY','UNKNOWN_FACE','CAMERA_ERROR'];
+const STATUSES = ['VERIFIED', 'AWAY', 'UNKNOWN_FACE', 'CAMERA_ERROR'];
 function nextDelay(){ return (8*60 + Math.random()*7*60) * 1000; }
 async function openCamera(){ return navigator.mediaDevices.getUserMedia({ video: true, audio: false }); }
 function closeStream(stream){ stream?.getTracks().forEach(t=>t.stop()); }
@@ -17,7 +17,7 @@ export function useFaceVerification(employeeId, enabled=true){
    const video=document.createElement('video'); video.muted=true; video.srcObject=stream; await video.play();
    const blinked=createBlinkTracker();
    let detection=null; let live=false; const end=Date.now()+1500;
-   while(Date.now()<end){ detection=await detectDescriptor(video); if(detection) live=blinked(detection.landmarks)||live; await new Promise(r=>setTimeout(r,200)); }
+   while (Date.now() < end) { detection = await detectDescriptor(video); if (detection) live = blinked(detection.landmarks) || live; await new Promise((resolve) => setTimeout(resolve, 200)); }
    let status='AWAY';
    if(detection && !live){ status='UNKNOWN_FACE'; }
    else if(detection){ const { embedding }=await api('/api/enrollment/me'); const distance=euclideanDistance(Array.from(detection.descriptor), embedding); status=statusFromDistance(distance); }
@@ -26,6 +26,6 @@ export function useFaceVerification(employeeId, enabled=true){
   }catch(e){ await api('/api/status',{method:'POST',body:JSON.stringify({ employeeId, status:'CAMERA_ERROR', timestamp:new Date().toISOString() })}).catch(()=>{}); setLastStatus('CAMERA_ERROR'); }
   finally{ closeStream(stream); setCameraActive(false); }
  },[employeeId]);
- useEffect(()=>{ if(!enabled||!employeeId)return; const schedule=()=>{timer.current=setTimeout(async()=>{await runCheck(); schedule();}, nextDelay())}; schedule(); return()=>clearTimeout(timer.current);},[enabled,employeeId,runCheck]);
+ useEffect(()=>{ if(!enabled||!employeeId)return; const schedule = () => { clearTimeout(timer.current); timer.current = setTimeout(async () => { await runCheck(); schedule(); }, nextDelay()); }; schedule(); return () => clearTimeout(timer.current);},[enabled,employeeId,runCheck]);
  return { cameraActive, lastStatus, runCheck };
 }

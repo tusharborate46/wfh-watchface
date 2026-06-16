@@ -17,6 +17,14 @@ export async function detectDescriptor(video) {
   return result || null;
 }
 export function averageDescriptors(descriptors) {
-  const length = descriptors[0]?.length || 128;
-  return Array.from({ length }, (_, i) => descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length);
+  if (!Array.isArray(descriptors) || descriptors.length === 0) {
+    throw new Error('At least one face descriptor is required.');
+  }
+
+  const length = descriptors[0]?.length;
+  if (!length || descriptors.some((descriptor) => descriptor.length !== length)) {
+    throw new Error('Face descriptors must be non-empty arrays with matching dimensions.');
+  }
+
+  return Array.from({ length }, (_, i) => descriptors.reduce((sum, descriptor) => sum + descriptor[i], 0) / descriptors.length);
 }
