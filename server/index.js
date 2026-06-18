@@ -1,2 +1,7 @@
-import 'dotenv/config';import express from 'express';import cors from 'cors';import authRoutes from './routes/auth.js';import statusRoutes from './routes/status.js';import dashboardRoutes from './routes/dashboard.js';import enrollmentRoutes from './routes/enrollment.js';
-const app=express();app.use(cors({origin:process.env.CLIENT_ORIGIN||'http://localhost:5173'}));app.use(express.json({limit:'1mb'}));app.get('/health',(req,res)=>res.json({ok:true,privacy:'no images accepted'}));app.use('/api/auth',authRoutes);app.use('/api/status',statusRoutes);app.use('/api/dashboard',dashboardRoutes);app.use('/api/enrollment',enrollmentRoutes);app.listen(process.env.PORT||4000,()=>console.log('API listening'));
+import app from './app.js';
+
+const port = process.env.PORT || 4000;
+
+app.listen(port, () => {
+  console.log(`API listening on http://localhost:${port}`);
+});

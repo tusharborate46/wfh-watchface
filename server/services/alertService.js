@@ -1,29 +1,26 @@
-import nodemailer from 'nodemailer';
-
 export async function sendUnknownFaceAlert({ employee, manager }) {
+  const payload = {
+    type: 'UNKNOWN_FACE',
+    employee: {
+      id: employee.id,
+      name: employee.name,
+      email: employee.email,
+      department: employee.department
+    },
+    manager
+  };
+
   if (process.env.ALERT_WEBHOOK_URL) {
     await fetch(process.env.ALERT_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'UNKNOWN_FACE', employee, manager })
+      body: JSON.stringify(payload)
     });
     return;
   }
 
-  if (process.env.SMTP_HOST) {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
-    });
-    await transporter.sendMail({
-      from: process.env.ALERT_FROM,
-      to: [employee.email, manager?.email].filter(Boolean),
-      subject: 'Unknown face alert',
-      text: `An unknown face was detected for ${employee.name}. No image was captured or stored.`
-    });
-    return;
-  }
-
-  console.error('UNKNOWN_FACE alert could not be delivered because ALERT_WEBHOOK_URL and SMTP_HOST are not configured.', { employee, manager });
+  console.warn(
+    '[alert] UNKNOWN_FACE recorded locally. Configure ALERT_WEBHOOK_URL to send manager notifications.',
+    payload
+  );
 }

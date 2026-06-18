@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../utils/api';
+import { api } from '../utils/api.js';
 
 export default function Settings() {
   const [msg, setMsg] = useState('');
@@ -8,11 +8,12 @@ export default function Settings() {
   async function deleteEnrollment() {
     setDeleting(true);
     setMsg('');
+
     try {
-      const response = await api('/api/enrollment/me', { method: 'DELETE' });
-      setMsg(response.ok ? 'Enrollment deleted.' : 'Delete request completed.');
+      await api('/api/enrollment/me', { method: 'DELETE' });
+      setMsg('Enrollment deleted. Future checks will remain inactive until you enroll again.');
     } catch (err) {
-      console.error(err);
+      console.error('[settings]', err);
       setMsg(err.message || 'Unable to delete enrollment.');
     } finally {
       setDeleting(false);
@@ -20,15 +21,19 @@ export default function Settings() {
   }
 
   return (
-    <main className="p-8">
-      <div className="card max-w-xl">
-        <h1 className="text-3xl font-black">Privacy settings</h1>
-        <p className="my-4 text-slate-300">Delete your enrollment embedding at any time. This removes the encrypted vector used for verification.</p>
-        <button className="btn bg-red-500 text-white hover:bg-red-400" disabled={deleting} onClick={deleteEnrollment} type="button">
-          {deleting ? 'Deleting…' : 'Delete enrollment'}
+    <main className="page-shell narrow">
+      <section className="card">
+        <p className="eyebrow">Privacy settings</p>
+        <h1>Enrollment data</h1>
+        <p className="muted">
+          Delete your face enrollment at any time. This removes the encrypted numeric embedding used
+          for verification; the system never stores photos or videos.
+        </p>
+        <button className="danger-btn" disabled={deleting} onClick={deleteEnrollment} type="button">
+          {deleting ? 'Deleting...' : 'Delete enrollment'}
         </button>
-        {msg && <p className="mt-4">{msg}</p>}
-      </div>
+        {msg && <p className="notice">{msg}</p>}
+      </section>
     </main>
   );
 }

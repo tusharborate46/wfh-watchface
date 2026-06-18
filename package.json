@@ -1,9 +1,14 @@
 {
   "type": "module",
   "scripts": {
-    "install:all": "npm --prefix server install && npm --prefix client install",
-    "dev:server": "cd server && npm run dev",
-    "dev:client": "cd client && npm run dev",
-    "test:all": "cd server && node --test"
+    "install:all": "npm --prefix server install --no-save && npm --prefix client install --no-save",
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "download-models": "node download-models.js",
+    "test:all": "npm --prefix server test && npm --prefix client run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

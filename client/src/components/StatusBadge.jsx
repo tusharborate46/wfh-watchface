@@ -1,15 +1,27 @@
-const styles = {
-  VERIFIED: 'bg-green-500/20 text-green-300',
-  AWAY: 'bg-yellow-500/20 text-yellow-300',
-  UNKNOWN_FACE: 'bg-red-500/20 text-red-300',
-  CAMERA_ERROR: 'bg-orange-500/20 text-orange-300',
-  INACTIVE: 'bg-slate-500/20 text-slate-300'
+const STATUS_META = {
+  VERIFIED: {
+    label: '✅ VERIFIED',
+    className: 'status-badge status-verified'
+  },
+  AWAY: {
+    label: '🟡 AWAY / ON BREAK',
+    className: 'status-badge status-away'
+  },
+  UNKNOWN_FACE: {
+    label: '🔴 UNKNOWN FACE',
+    className: 'status-badge status-unknown'
+  },
+  CAMERA_ERROR: {
+    label: 'CAMERA ERROR',
+    className: 'status-badge status-error'
+  },
+  INACTIVE: {
+    label: '⚫ INACTIVE',
+    className: 'status-badge status-inactive'
+  }
 };
 
 export default function StatusBadge({ status = 'INACTIVE' }) {
-  return (
-    <span className={`rounded-full px-3 py-1 text-sm font-semibold ${styles[status] || styles.INACTIVE}`}>
-      {status.replaceAll('_', ' ')}
-    </span>
-  );
+  const meta = STATUS_META[status] || STATUS_META.INACTIVE;
+  return <span className={meta.className}>{meta.label}</span>;
 }

@@ -1,61 +1,114 @@
 import { useEffect, useState } from 'react';
-import { api } from '../utils/api';
+import { api } from '../utils/api.js';
 import EmployeeCard from './EmployeeCard.jsx';
 import StatusBadge from './StatusBadge.jsx';
 
 export default function Dashboard() {
-  const [data, setData] = useState({ employees: [], activity: [], metrics: {} });
+  const [data, setData] = useState({
+    employees: [],
+    activity: [],
+    metrics: { verified: 0, away: 0, unknown: 0, inactive: 0, alertsToday: 0 }
+  });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     const load = async () => {
       try {
-        setData(await api('/api/dashboard'));
+        const next = await api('/api/dashboard');
+        if (!mounted) return;
+        setData(next);
         setError('');
       } catch (err) {
-        console.error(err);
+        if (!mounted) return;
+        console.error('[dashboard]', err);
         setError(err.message);
+      } finally {
+        if (mounted) setLoading(false);
       }
     };
 
     load();
-    const id = setInterval(load, 60000);
-    return () => clearInterval(id);
+    const id = setInterval(load, 5000);
+
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
   }, []);
 
   return (
-    <main className="p-8">
-      <h1 className="text-3xl font-black">Manager Dashboard</h1>
-      {error && <p className="mt-4 rounded-lg bg-red-500/20 p-3 text-red-200">{error}</p>}
-      <section className="my-6 grid gap-4 md:grid-cols-3">
-        {[
-          ['Verified', data.metrics.verified],
-          ['On break', data.metrics.away],
-          ['Alerts today', data.metrics.alertsToday]
-        ].map(([label, value]) => (
-          <div className="card" key={label}>
-            <p className="text-slate-400">{label}</p>
-            <p className="text-4xl font-black">{value || 0}</p>
-          </div>
-        ))}
-      </section>
-      <section className="grid gap-4 md:grid-cols-3">
-        {data.employees.map((employee) => (
-          <EmployeeCard key={employee.id} employee={employee} />
-        ))}
-      </section>
-      <h2 className="mt-8 text-xl font-bold">Activity log</h2>
-      <table className="mt-3 w-full overflow-hidden rounded-xl bg-slate-900">
-        <tbody>
-          {data.activity.map((activity) => (
-            <tr className="border-t border-slate-800" key={activity.id}>
-              <td className="p-3">{new Date(activity.checked_at).toLocaleString()}</td>
-              <td>{activity.name}</td>
-              <td><StatusBadge status={activity.status} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <main className="page-shell">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Manager dashboard</p>
+          <h1>Team verification status</h1>
+        </div>
+        <p className="muted small">Refreshes every 5 seconds</p>
+      </div>
+
+      {error && <p className="error-box">{error}</p>}
+
+      {loading ? (
+        <p className="muted loading">Loading...</p>
+      ) : (
+        <>
+          <section className="metrics-grid">
+            <Metric label="Verified" value={data.metrics.verified} tone="green" />
+            <Metric label="Away / on break" value={data.metrics.away} tone="yellow" />
+            <Metric label="Unknown face" value={data.metrics.unknown} tone="red" />
+            <Metric label="Inactive" value={data.metrics.inactive} tone="gray" />
+            <Metric label="Alerts today" value={data.metrics.alertsToday} tone="red" />
+          </section>
+
+          <section className="employee-grid">
+            {data.employees.length === 0 && <p className="muted">No employees found.</p>}
+            {data.employees.map((employee) => (
+              <EmployeeCard key={employee.id} employee={employee} />
+            ))}
+          </section>
+
+          <section className="table-section">
+            <h2>Activity log</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Employee</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.activity.length === 0 && (
+                    <tr>
+                      <td colSpan={3}>No activity recorded today.</td>
+                    </tr>
+                  )}
+                  {data.activity.map((activity) => (
+                    <tr key={activity.id}>
+                      <td>{new Date(activity.checked_at).toLocaleString()}</td>
+                      <td>{activity.name}</td>
+                      <td><StatusBadge status={activity.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
     </main>
+  );
+}
+
+function Metric({ label, value, tone }) {
+  return (
+    <div className={`metric metric-${tone}`}>
+      <p>{label}</p>
+      <strong>{value ?? 0}</strong>
+    </div>
   );
 }

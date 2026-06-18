@@ -1,31 +1,129 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../utils/api';
-import { detectDescriptor } from '../utils/faceapi-loader';
-import { euclideanDistance, statusFromDistance } from '../utils/distance';
-import { createBlinkTracker } from '../utils/liveness';
-const STATUSES = ['VERIFIED', 'AWAY', 'UNKNOWN_FACE', 'CAMERA_ERROR'];
-function nextDelay(){ return (8*60 + Math.random()*7*60) * 1000; }
-async function openCamera(){ return navigator.mediaDevices.getUserMedia({ video: true, audio: false }); }
-function closeStream(stream){ stream?.getTracks().forEach(t=>t.stop()); }
-export function useFaceVerification(employeeId, enabled=true){
- const [cameraActive,setCameraActive]=useState(false); const [lastStatus,setLastStatus]=useState(null); const timer=useRef();
- const runCheck=useCallback(async()=>{
-  let stream;
-  try{
-   alert('Privacy notice: camera will activate for 1.5 seconds. Please blink once for liveness. No images leave this device.');
-   stream=await openCamera(); setCameraActive(true);
-   const video=document.createElement('video'); video.muted=true; video.srcObject=stream; await video.play();
-   const blinked=createBlinkTracker();
-   let detection=null; let live=false; const end=Date.now()+1500;
-   while (Date.now() < end) { detection = await detectDescriptor(video); if (detection) live = blinked(detection.landmarks) || live; await new Promise((resolve) => setTimeout(resolve, 200)); }
-   let status='AWAY';
-   if(detection && !live){ status='UNKNOWN_FACE'; }
-   else if(detection){ const { embedding }=await api('/api/enrollment/me'); const distance=euclideanDistance(Array.from(detection.descriptor), embedding); status=statusFromDistance(distance); }
-   if(!STATUSES.includes(status)) status='AWAY';
-   await api('/api/status',{method:'POST',body:JSON.stringify({ employeeId, status, timestamp:new Date().toISOString() })}); setLastStatus(status);
-  }catch(e){ await api('/api/status',{method:'POST',body:JSON.stringify({ employeeId, status:'CAMERA_ERROR', timestamp:new Date().toISOString() })}).catch(()=>{}); setLastStatus('CAMERA_ERROR'); }
-  finally{ closeStream(stream); setCameraActive(false); }
- },[employeeId]);
- useEffect(()=>{ if(!enabled||!employeeId)return; const schedule = () => { clearTimeout(timer.current); timer.current = setTimeout(async () => { await runCheck(); schedule(); }, nextDelay()); }; schedule(); return () => clearTimeout(timer.current);},[enabled,employeeId,runCheck]);
- return { cameraActive, lastStatus, runCheck };
+import { api } from '../utils/api.js';
+import { euclideanDistance, statusFromDistance } from '../utils/distance.js';
+import { detectDescriptor } from '../utils/faceapi-loader.js';
+
+const STATUSES = new Set(['VERIFIED', 'AWAY', 'UNKNOWN_FACE', 'CAMERA_ERROR']);
+const CHECK_WINDOW_MS = 5000;
+
+function nextDelay() {
+  const minMinutes = Number(import.meta.env.VITE_CHECK_INTERVAL_MIN || 8);
+  const maxMinutes = Number(import.meta.env.VITE_CHECK_INTERVAL_MAX || 15);
+  const min = Math.max(1, Math.min(minMinutes, maxMinutes));
+  const max = Math.max(min, maxMinutes);
+
+  return (min * 60 + Math.random() * (max - min) * 60) * 1000;
+}
+
+async function openCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Camera access is not available in this browser.');
+  }
+
+  return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+}
+
+function closeStream(stream) {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+export function useFaceVerification(employeeId, enabled = true) {
+  const [cameraActive, setCameraActive] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+  const [lastStatus, setLastStatus] = useState(null);
+  const [message, setMessage] = useState('');
+  const timer = useRef();
+  const running = useRef(false);
+
+  const submitStatus = useCallback(async (status) => {
+    const safeStatus = STATUSES.has(status) ? status : 'AWAY';
+    await api('/api/status', {
+      method: 'POST',
+      body: JSON.stringify({
+        status: safeStatus,
+        timestamp: new Date().toISOString()
+      })
+    });
+    setLastStatus(safeStatus);
+    return safeStatus;
+  }, []);
+
+  const runCheck = useCallback(async () => {
+    if (!enabled || !employeeId || running.current) return null;
+
+    running.current = true;
+    setIsChecking(true);
+    setMessage('Camera will activate briefly for a local face check. No image or video will be sent.');
+
+    let stream;
+    try {
+      const { embedding } = await api('/api/enrollment/me');
+
+      stream = await openCamera();
+      setCameraActive(true);
+      setMessage('Camera active. Face verification is running locally on this device.');
+
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      await video.play();
+
+      let detection = null;
+      const end = Date.now() + CHECK_WINDOW_MS;
+
+      while (Date.now() < end && !detection) {
+        detection = await detectDescriptor(video);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      let status = 'AWAY';
+      if (detection) {
+        const distance = euclideanDistance(Array.from(detection.descriptor), embedding);
+        status = statusFromDistance(distance);
+      }
+
+      const savedStatus = await submitStatus(status);
+      setMessage(savedStatus === 'UNKNOWN_FACE'
+        ? 'Unknown face detected. The manager dashboard has been updated.'
+        : `Check complete: ${savedStatus.replaceAll('_', ' ')}.`
+      );
+
+      return savedStatus;
+    } catch (err) {
+      console.error('[face-check]', err);
+
+      if (err.message === 'No enrollment found') {
+        setLastStatus('INACTIVE');
+        setMessage('Enrollment is required before privacy checks can run.');
+        return 'INACTIVE';
+      }
+
+      await submitStatus('CAMERA_ERROR').catch(() => {});
+      setMessage(err.message || 'Camera check failed.');
+      return 'CAMERA_ERROR';
+    } finally {
+      closeStream(stream);
+      setCameraActive(false);
+      setIsChecking(false);
+      running.current = false;
+    }
+  }, [employeeId, enabled, submitStatus]);
+
+  useEffect(() => {
+    clearTimeout(timer.current);
+    if (!enabled || !employeeId) return undefined;
+
+    const schedule = () => {
+      timer.current = setTimeout(async () => {
+        await runCheck();
+        schedule();
+      }, nextDelay());
+    };
+
+    schedule();
+    return () => clearTimeout(timer.current);
+  }, [employeeId, enabled, runCheck]);
+
+  return { cameraActive, isChecking, lastStatus, message, runCheck };
 }

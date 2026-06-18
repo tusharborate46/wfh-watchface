@@ -1,31 +1,44 @@
-import crypto from 'crypto';
 import express from 'express';
-import { query } from '../db.js';
-import { auth, canAccessEmployee } from '../middleware/auth.js';
+import { auth } from '../middleware/auth.js';
 import { sendUnknownFaceAlert } from '../services/alertService.js';
+import {
+  addStatus,
+  canUserAccessEmployee,
+  getEmployeeWithManager,
+  getStatusHistory
+} from '../store.js';
 
-const r = express.Router();
-r.use(auth);
-const allowed = ['VERIFIED', 'AWAY', 'UNKNOWN_FACE', 'CAMERA_ERROR'];
+const router = express.Router();
+const ALLOWED_STATUSES = new Set(['VERIFIED', 'AWAY', 'UNKNOWN_FACE', 'CAMERA_ERROR']);
 
-r.post('/', async (req, res, next) => {
+router.use(auth);
+
+router.post('/', async (req, res, next) => {
   try {
-    const { employeeId, status, timestamp } = req.body;
-    if (!(await canAccessEmployee(req, employeeId))) return res.status(403).json({ error: 'Forbidden' });
-    if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const status = req.body?.status;
+    const employeeId = req.body?.employeeId || req.user.employeeId;
 
-    const id = crypto.randomUUID();
-    const checkedAt = timestamp || new Date();
-    await query('insert into status_logs(id,employee_id,status,checked_at) values(?,?,?,?)', [id, employeeId, status, checkedAt]);
-    const log = { id, employee_id: employeeId, status, checked_at: checkedAt };
+    if (!ALLOWED_STATUSES.has(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    if (!(await canUserAccessEmployee(req.user, employeeId))) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const log = await addStatus({
+      employeeId,
+      status,
+      timestamp: req.body?.timestamp
+    });
 
     if (status === 'UNKNOWN_FACE') {
-      await query('insert into alerts(employee_id,triggered_at) values(?,?)', [employeeId, checkedAt]);
-      const people = await query('select e.*,m.email manager_email,m.name manager_name from employees e left join employees m on e.manager_id=m.id where e.id=?', [employeeId]);
-      sendUnknownFaceAlert({
-        employee: people.rows[0],
-        manager: { email: people.rows[0]?.manager_email, name: people.rows[0]?.manager_name }
-      }).catch(console.error);
+      const people = await getEmployeeWithManager(employeeId);
+      if (people) {
+        sendUnknownFaceAlert(people).catch((err) => {
+          console.error('[alert]', err);
+        });
+      }
     }
 
     res.status(201).json(log);
@@ -34,17 +47,16 @@ r.post('/', async (req, res, next) => {
   }
 });
 
-r.get('/:employeeId', async (req, res, next) => {
+router.get('/:employeeId', async (req, res, next) => {
   try {
-    if (!(await canAccessEmployee(req, req.params.employeeId))) return res.status(403).json({ error: 'Forbidden' });
-    const { rows } = await query(
-      'select * from status_logs where employee_id=? and checked_at >= CURRENT_DATE and checked_at < CURRENT_DATE + INTERVAL 1 DAY order by checked_at desc',
-      [req.params.employeeId]
-    );
-    res.json(rows);
+    if (!(await canUserAccessEmployee(req.user, req.params.employeeId))) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    res.json(await getStatusHistory(req.params.employeeId));
   } catch (err) {
     next(err);
   }
 });
 
-export default r;
+export default router;

@@ -1,22 +1,30 @@
 import { useRef, useState } from 'react';
-import { api } from '../utils/api';
-import { averageDescriptors, detectDescriptor } from '../utils/faceapi-loader';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../utils/api.js';
+import { averageDescriptors, detectDescriptor } from '../utils/faceapi-loader.js';
+
+const ENROLLMENT_SECONDS = 8;
+const REQUIRED_SAMPLES = 3;
 
 function stop(stream) {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
-export default function EnrollPage() {
+export default function EnrollPage({ runCheck }) {
   const videoRef = useRef(null);
   const [active, setActive] = useState(false);
-  const [msg, setMsg] = useState('Enrollment stores only an encrypted 128-dimension face embedding. No photos or video are saved.');
+  const [sampleCount, setSampleCount] = useState(0);
+  const [msg, setMsg] = useState('Enrollment stores only an encrypted 128-number face embedding. No photos or video are saved.');
+  const navigate = useNavigate();
 
   async function enroll() {
     let stream;
+    setActive(true);
+    setSampleCount(0);
+
     try {
-      setMsg('Camera active. Please face the camera for 10 seconds. Blink is optional.');
+      setMsg('Camera active. Face the camera while samples are captured locally.');
       stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      setActive(true);
 
       const video = videoRef.current;
       video.srcObject = stream;
@@ -25,28 +33,37 @@ export default function EnrollPage() {
       await video.play();
 
       const samples = [];
-      const end = Date.now() + 10000;
+      const end = Date.now() + ENROLLMENT_SECONDS * 1000;
 
       while (Date.now() < end) {
         const detection = await detectDescriptor(video);
         if (detection) {
           samples.push(Array.from(detection.descriptor));
-          setMsg(`Face detected! Capturing samples: ${samples.length}/5`);
+          setSampleCount(samples.length);
+          setMsg(`Face detected. Captured ${samples.length} local samples.`);
         }
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 600));
       }
 
-      if (samples.length < 3) throw new Error(`Not enough face samples captured (got ${samples.length}, need 3). Make sure your face is visible.`);
+      if (samples.length < REQUIRED_SAMPLES) {
+        throw new Error(`Only ${samples.length} samples were captured. Make sure your face is visible and try again.`);
+      }
 
       await api('/api/enrollment', {
         method: 'POST',
         body: JSON.stringify({ embedding: averageDescriptors(samples) })
       });
-      setMsg('Enrollment complete. Camera closed.');
+
+      setMsg('Enrollment complete. Running one verification check now.');
+      stop(stream);
+      if (videoRef.current) videoRef.current.srcObject = null;
+      setActive(false);
+
+      if (runCheck) await runCheck();
+      navigate('/me');
     } catch (err) {
-      console.error(err);
+      console.error('[enrollment]', err);
       setMsg(err.message || 'Enrollment failed.');
-    } finally {
       stop(stream);
       if (videoRef.current) videoRef.current.srcObject = null;
       setActive(false);
@@ -54,25 +71,38 @@ export default function EnrollPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
-      <div className="card">
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-black">Employee enrollment</h1>
-          {active && <span className="h-4 w-4 animate-pulse rounded-full bg-red-500" title="camera active" />}
+    <main className="page-shell narrow">
+      <section className="card">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Local enrollment</p>
+            <h1>Employee face enrollment</h1>
+          </div>
+          {active && (
+            <span className="camera-indicator">
+              <span />
+              Camera active
+            </span>
+          )}
         </div>
-        <p className="my-4 text-slate-300">{msg}</p>
+
+        <p className="muted">{msg}</p>
+
         <video
           ref={videoRef}
-          className={`mb-4 w-full rounded-xl bg-slate-950 ${active ? 'block' : 'hidden'}`}
-          style={{ height: '300px', objectFit: 'cover' }}
+          className={`camera-preview ${active ? 'is-active' : ''}`}
           autoPlay
           muted
           playsInline
         />
-        <button className="btn" disabled={active} onClick={enroll} type="button">
-          {active ? 'Enrolling...' : 'Start 10-second enrollment'}
-        </button>
-      </div>
+
+        <div className="action-row">
+          <button className="btn" disabled={active} onClick={enroll} type="button">
+            {active ? 'Enrolling...' : 'Start enrollment'}
+          </button>
+          <span className="muted small">Samples: {sampleCount}/{REQUIRED_SAMPLES}</span>
+        </div>
+      </section>
     </main>
   );
 }
