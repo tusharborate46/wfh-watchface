@@ -12,6 +12,7 @@ function isValidEmbedding(embedding) {
     && embedding.every((value) => typeof value === 'number' && Number.isFinite(value));
 }
 
+// POST /api/enrollment — save face embedding
 router.post('/', async (req, res, next) => {
   try {
     const embedding = req.body?.embedding;
@@ -28,6 +29,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// GET /api/enrollment/me — get own embedding (decrypted)
 router.get('/me', async (req, res, next) => {
   try {
     const row = await getEnrollment(req.user.employeeId);
@@ -39,6 +41,7 @@ router.get('/me', async (req, res, next) => {
   }
 });
 
+// DELETE /api/enrollment/me — delete own enrollment
 router.delete('/me', async (req, res, next) => {
   try {
     await deleteEnrollment(req.user.employeeId);

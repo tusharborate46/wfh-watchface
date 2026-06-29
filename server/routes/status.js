@@ -13,6 +13,7 @@ const ALLOWED_STATUSES = new Set(['VERIFIED', 'AWAY', 'UNKNOWN_FACE', 'CAMERA_ER
 
 router.use(auth);
 
+// POST /api/status — record a status check
 router.post('/', async (req, res, next) => {
   try {
     const status = req.body?.status;
@@ -47,6 +48,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// GET /api/status/:employeeId — get today's status history for employee
 router.get('/:employeeId', async (req, res, next) => {
   try {
     if (!(await canUserAccessEmployee(req.user, req.params.employeeId))) {

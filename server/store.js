@@ -1,130 +1,11 @@
-import crypto from 'crypto';
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+/**
+ * store.js — PostgreSQL-backed data access layer
+ * Replaces the old JSON flat-file store.
+ * All functions maintain the same exported signatures as before.
+ */
+import { query } from './db.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_DATA_FILE = path.join(__dirname, 'data', 'wfh-watchface.json');
-const DATA_FILE = process.env.FILE_DB_PATH || DEFAULT_DATA_FILE;
-
-const MANAGER_ID = '88888888-8888-4888-a888-888888888888';
-const EMPLOYEE_ID = '11111111-1111-4111-a111-111111111111';
-const ADMIN_ID = '99999999-9999-4999-a999-999999999999';
-
-let writeQueue = Promise.resolve();
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function emptyStore() {
-  const createdAt = nowIso();
-  return {
-    employees: [
-      {
-        id: MANAGER_ID,
-        name: 'Bob Manager',
-        email: 'manager@example.com',
-        role: 'manager',
-        department: 'Engineering',
-        manager_id: null,
-        created_at: createdAt
-      },
-      {
-        id: EMPLOYEE_ID,
-        name: 'Alice Employee',
-        email: 'employee@example.com',
-        role: 'employee',
-        department: 'Engineering',
-        manager_id: MANAGER_ID,
-        created_at: createdAt
-      },
-      {
-        id: ADMIN_ID,
-        name: 'Admin User',
-        email: 'admin@example.com',
-        role: 'admin',
-        department: 'Operations',
-        manager_id: null,
-        created_at: createdAt
-      }
-    ],
-    face_embeddings: [],
-    status_logs: [],
-    alerts: []
-  };
-}
-
-function normalizeStore(data) {
-  return {
-    employees: Array.isArray(data?.employees) ? data.employees : emptyStore().employees,
-    face_embeddings: Array.isArray(data?.face_embeddings) ? data.face_embeddings : [],
-    status_logs: Array.isArray(data?.status_logs) ? data.status_logs : [],
-    alerts: Array.isArray(data?.alerts) ? data.alerts : []
-  };
-}
-
-async function ensureStoreFile() {
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-    await fs.writeFile(DATA_FILE, JSON.stringify(emptyStore(), null, 2));
-  }
-}
-
-async function readStore() {
-  await ensureStoreFile();
-  const raw = await fs.readFile(DATA_FILE, 'utf8');
-  return normalizeStore(JSON.parse(raw));
-}
-
-async function writeStore(data) {
-  await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-  const tmp = `${DATA_FILE}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(normalizeStore(data), null, 2));
-  await fs.rename(tmp, DATA_FILE);
-}
-
-function updateStore(mutator) {
-  writeQueue = writeQueue.then(async () => {
-    const data = await readStore();
-    const result = await mutator(data);
-    await writeStore(data);
-    return result;
-  });
-  return writeQueue;
-}
-
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function isToday(value) {
-  const checkedAt = new Date(value);
-  const start = startOfToday();
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  return checkedAt >= start && checkedAt < end;
-}
-
-function latestTodayStatus(statusLogs, employeeId) {
-  return statusLogs
-    .filter((log) => log.employee_id === employeeId && isToday(log.checked_at))
-    .sort((a, b) => new Date(b.checked_at) - new Date(a.checked_at))[0];
-}
-
-function scopedEmployees(data, user) {
-  return data.employees
-    .filter((employee) => employee.role === 'employee')
-    .filter((employee) => {
-      if (user.role === 'admin') return true;
-      if (user.role === 'manager') return employee.manager_id === user.employeeId;
-      return employee.id === user.employeeId;
-    });
-}
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function httpError(status, message) {
   const err = new Error(message);
@@ -132,159 +13,320 @@ function httpError(status, message) {
   return err;
 }
 
+// ─── Employee Lookups ─────────────────────────────────────────────────────────
+
+export async function findEmployeeByCode(code) {
+  const { rows } = await query(
+    'SELECT * FROM employees WHERE employee_code = $1 LIMIT 1',
+    [String(code).trim()]
+  );
+  return rows[0] || null;
+}
+
 export async function findEmployeeByEmail(email) {
-  const data = await readStore();
-  return data.employees.find((employee) => employee.email.toLowerCase() === String(email).toLowerCase()) || null;
+  const { rows } = await query(
+    'SELECT * FROM employees WHERE LOWER(email) = LOWER($1) LIMIT 1',
+    [String(email).trim()]
+  );
+  return rows[0] || null;
 }
 
 export async function findEmployeeById(employeeId) {
-  const data = await readStore();
-  return data.employees.find((employee) => employee.id === employeeId) || null;
+  const { rows } = await query(
+    'SELECT * FROM employees WHERE id = $1 LIMIT 1',
+    [employeeId]
+  );
+  return rows[0] || null;
 }
+
+export async function createEmployee({ name, email, employee_code, password_hash, department, manager_id }) {
+  const { rows } = await query(
+    `INSERT INTO employees (name, email, employee_code, password_hash, department, manager_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, name, email, employee_code, department, manager_id, created_at`,
+    [name, email, employee_code, password_hash, department || null, manager_id || null]
+  );
+  return rows[0];
+}
+
+export async function updateEmployeePassword(id, passwordHash) {
+  await query(
+    'UPDATE employees SET password_hash = $1 WHERE id = $2',
+    [passwordHash, id]
+  );
+}
+
+// ─── Manager Lookups ──────────────────────────────────────────────────────────
+
+export async function findManagerByCode(code) {
+  const { rows } = await query(
+    'SELECT * FROM managers WHERE manager_code = $1 LIMIT 1',
+    [String(code).trim()]
+  );
+  return rows[0] || null;
+}
+
+export async function findManagerByEmail(email) {
+  const { rows } = await query(
+    'SELECT * FROM managers WHERE LOWER(email) = LOWER($1) LIMIT 1',
+    [String(email).trim()]
+  );
+  return rows[0] || null;
+}
+
+export async function findManagerById(managerId) {
+  const { rows } = await query(
+    'SELECT * FROM managers WHERE id = $1 LIMIT 1',
+    [managerId]
+  );
+  return rows[0] || null;
+}
+
+export async function createManager({ name, email, manager_code, password_hash, department }) {
+  const { rows } = await query(
+    `INSERT INTO managers (name, email, manager_code, password_hash, department)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, email, manager_code, department, created_at`,
+    [name, email, manager_code, password_hash, department || null]
+  );
+  return rows[0];
+}
+
+// ─── Access Control ───────────────────────────────────────────────────────────
 
 export async function canUserAccessEmployee(user, employeeId) {
   if (!employeeId) return false;
-  if (user.role === 'admin' || user.employeeId === employeeId) return true;
-  if (user.role !== 'manager') return false;
-
-  const employee = await findEmployeeById(employeeId);
-  return employee?.manager_id === user.employeeId;
+  // employee can only access their own data
+  if (user.role === 'employee') return user.employeeId === employeeId;
+  // manager can access employees they manage
+  if (user.role === 'manager') {
+    const { rows } = await query(
+      'SELECT id FROM employees WHERE id = $1 AND manager_id = $2',
+      [employeeId, user.managerId]
+    );
+    return rows.length > 0;
+  }
+  return false;
 }
 
+// ─── Enrollment ───────────────────────────────────────────────────────────────
+
 export async function saveEnrollment(employeeId, encrypted, iv) {
-  return updateStore((data) => {
-    if (!data.employees.some((employee) => employee.id === employeeId)) {
-      throw httpError(404, 'Employee not found');
-    }
+  // encrypted is a Buffer
+  const encryptedHex = Buffer.isBuffer(encrypted)
+    ? encrypted
+    : Buffer.from(encrypted);
 
-    data.face_embeddings = data.face_embeddings.filter((row) => row.employee_id !== employeeId);
-    data.face_embeddings.push({
-      id: crypto.randomUUID(),
-      employee_id: employeeId,
-      embedding_encrypted: Buffer.from(encrypted).toString('base64'),
-      iv,
-      created_at: nowIso()
-    });
+  // Delete existing enrollment first
+  await query('DELETE FROM face_embeddings WHERE employee_id = $1', [employeeId]);
 
-    return { ok: true };
-  });
+  await query(
+    `INSERT INTO face_embeddings (employee_id, embedding_encrypted, iv)
+     VALUES ($1, $2, $3)`,
+    [employeeId, encryptedHex, iv]
+  );
+
+  return { ok: true };
 }
 
 export async function getEnrollment(employeeId) {
-  const data = await readStore();
-  const row = data.face_embeddings
-    .filter((entry) => entry.employee_id === employeeId)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-
-  if (!row) return null;
+  const { rows } = await query(
+    `SELECT embedding_encrypted, iv FROM face_embeddings
+     WHERE employee_id = $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [employeeId]
+  );
+  if (!rows[0]) return null;
   return {
-    embedding_encrypted: Buffer.from(row.embedding_encrypted, 'base64'),
-    iv: row.iv
+    embedding_encrypted: rows[0].embedding_encrypted, // already a Buffer via pg
+    iv: rows[0].iv
   };
 }
 
 export async function deleteEnrollment(employeeId) {
-  return updateStore((data) => {
-    data.face_embeddings = data.face_embeddings.filter((row) => row.employee_id !== employeeId);
-    return { ok: true };
-  });
+  await query('DELETE FROM face_embeddings WHERE employee_id = $1', [employeeId]);
+  return { ok: true };
 }
 
+export async function hasEnrollment(employeeId) {
+  const { rows } = await query(
+    'SELECT id FROM face_embeddings WHERE employee_id = $1 LIMIT 1',
+    [employeeId]
+  );
+  return rows.length > 0;
+}
+
+// ─── Status Logs ──────────────────────────────────────────────────────────────
+
 export async function addStatus({ employeeId, status, timestamp }) {
-  return updateStore((data) => {
-    if (!data.employees.some((employee) => employee.id === employeeId)) {
-      throw httpError(404, 'Employee not found');
-    }
+  const checkedAt = timestamp && !Number.isNaN(Date.parse(timestamp))
+    ? new Date(timestamp).toISOString()
+    : new Date().toISOString();
 
-    const checkedAt = timestamp && !Number.isNaN(Date.parse(timestamp))
-      ? new Date(timestamp).toISOString()
-      : nowIso();
+  const { rows } = await query(
+    `INSERT INTO status_logs (employee_id, status, checked_at)
+     VALUES ($1, $2, $3)
+     RETURNING id, employee_id, status, checked_at`,
+    [employeeId, status, checkedAt]
+  );
 
-    const log = {
-      id: crypto.randomUUID(),
-      employee_id: employeeId,
-      status,
-      checked_at: checkedAt
-    };
+  const log = rows[0];
 
-    data.status_logs.push(log);
+  if (status === 'UNKNOWN_FACE') {
+    await query(
+      `INSERT INTO alerts (employee_id, triggered_at)
+       VALUES ($1, $2)`,
+      [employeeId, checkedAt]
+    );
+  }
 
-    if (status === 'UNKNOWN_FACE') {
-      data.alerts.push({
-        id: crypto.randomUUID(),
-        employee_id: employeeId,
-        triggered_at: checkedAt,
-        acknowledged: false,
-        acknowledged_at: null
-      });
-    }
-
-    return log;
-  });
+  return log;
 }
 
 export async function getStatusHistory(employeeId) {
-  const data = await readStore();
-  return data.status_logs
-    .filter((log) => log.employee_id === employeeId && isToday(log.checked_at))
-    .sort((a, b) => new Date(b.checked_at) - new Date(a.checked_at));
+  const { rows } = await query(
+    `SELECT id, employee_id, status, checked_at
+     FROM status_logs
+     WHERE employee_id = $1
+       AND checked_at >= NOW()::date
+     ORDER BY checked_at DESC`,
+    [employeeId]
+  );
+  return rows;
 }
 
-export async function getEmployeeWithManager(employeeId) {
-  const data = await readStore();
-  const employee = data.employees.find((row) => row.id === employeeId);
-  if (!employee) return null;
+// ─── Employee + Manager info ───────────────────────────────────────────────────
 
-  const manager = data.employees.find((row) => row.id === employee.manager_id);
+export async function getEmployeeWithManager(employeeId) {
+  const { rows } = await query(
+    `SELECT e.id, e.name, e.email, e.department, e.manager_id,
+            m.name AS manager_name, m.email AS manager_email
+     FROM employees e
+     LEFT JOIN managers m ON m.id = e.manager_id
+     WHERE e.id = $1`,
+    [employeeId]
+  );
+  if (!rows[0]) return null;
+  const row = rows[0];
   return {
-    employee,
-    manager: manager ? { email: manager.email, name: manager.name } : null
+    employee: { id: row.id, name: row.name, email: row.email, department: row.department },
+    manager: row.manager_name ? { name: row.manager_name, email: row.manager_email } : null
   };
 }
 
+// ─── Manager-scoped employee list ─────────────────────────────────────────────
+
+export async function getEmployeesForManager(managerId) {
+  const { rows } = await query(
+    `SELECT e.id, e.name, e.email, e.employee_code, e.department, e.created_at,
+            EXISTS(SELECT 1 FROM face_embeddings fe WHERE fe.employee_id = e.id) AS enrolled
+     FROM employees e
+     WHERE e.manager_id = $1
+     ORDER BY e.name`,
+    [managerId]
+  );
+  return rows;
+}
+
+// ─── Alerts ───────────────────────────────────────────────────────────────────
+
+export async function getAlertsForManager(managerId) {
+  const { rows } = await query(
+    `SELECT a.id, a.employee_id, a.triggered_at, a.acknowledged, a.acknowledged_at,
+            e.name AS employee_name, e.department
+     FROM alerts a
+     JOIN employees e ON e.id = a.employee_id
+     WHERE e.manager_id = $1
+     ORDER BY a.triggered_at DESC
+     LIMIT 200`,
+    [managerId]
+  );
+  return rows;
+}
+
+export async function acknowledgeAlert(alertId, managerId) {
+  // Verify the alert belongs to a manager's employee
+  const { rows } = await query(
+    `UPDATE alerts a
+     SET acknowledged = TRUE, acknowledged_at = NOW()
+     FROM employees e
+     WHERE a.id = $1 AND a.employee_id = e.id AND e.manager_id = $2
+     RETURNING a.id`,
+    [alertId, managerId]
+  );
+  if (!rows[0]) throw httpError(404, 'Alert not found');
+  return { ok: true };
+}
+
+// ─── Dashboard Snapshot ───────────────────────────────────────────────────────
+
 export async function getDashboardSnapshot(user) {
-  const data = await readStore();
-  const employees = scopedEmployees(data, user).map((employee) => {
-    const latest = latestTodayStatus(data.status_logs, employee.id);
+  // user has { role, managerId }
+  const employees = await getEmployeesForManager(user.managerId);
+
+  const employeeIds = employees.map((e) => e.id);
+
+  let statusMap = {};
+  if (employeeIds.length > 0) {
+    // Get latest status for today for each employee
+    const { rows: statusRows } = await query(
+      `SELECT DISTINCT ON (employee_id) employee_id, status, checked_at
+       FROM status_logs
+       WHERE employee_id = ANY($1::uuid[])
+         AND checked_at >= NOW()::date
+       ORDER BY employee_id, checked_at DESC`,
+      [employeeIds]
+    );
+    statusMap = Object.fromEntries(statusRows.map((r) => [r.employee_id, r]));
+  }
+
+  const enriched = employees.map((e) => {
+    const latest = statusMap[e.id];
     return {
-      id: employee.id,
-      name: employee.name,
-      department: employee.department,
+      id: e.id,
+      name: e.name,
+      department: e.department,
+      enrolled: e.enrolled,
       current_status: latest?.status || 'INACTIVE',
       last_checked_at: latest?.checked_at || null
     };
   });
 
-  const scopedIds = new Set(employees.map((employee) => employee.id));
-  const activity = data.status_logs
-    .filter((log) => scopedIds.has(log.employee_id) && isToday(log.checked_at))
-    .sort((a, b) => new Date(b.checked_at) - new Date(a.checked_at))
-    .slice(0, 50)
-    .map((log) => {
-      const employee = data.employees.find((row) => row.id === log.employee_id);
-      return {
-        id: log.id,
-        checked_at: log.checked_at,
-        status: log.status,
-        name: employee?.name || 'Unknown employee'
-      };
-    });
+  let activity = [];
+  if (employeeIds.length > 0) {
+    const { rows: actRows } = await query(
+      `SELECT sl.id, sl.checked_at, sl.status, e.name
+       FROM status_logs sl
+       JOIN employees e ON e.id = sl.employee_id
+       WHERE sl.employee_id = ANY($1::uuid[])
+         AND sl.checked_at >= NOW()::date
+       ORDER BY sl.checked_at DESC
+       LIMIT 50`,
+      [employeeIds]
+    );
+    activity = actRows;
+  }
 
-  const alertsToday = data.alerts.filter((alert) => scopedIds.has(alert.employee_id) && isToday(alert.triggered_at)).length;
+  let alertsToday = 0;
+  if (employeeIds.length > 0) {
+    const { rows: alertRows } = await query(
+      `SELECT COUNT(*) AS cnt FROM alerts
+       WHERE employee_id = ANY($1::uuid[])
+         AND triggered_at >= NOW()::date`,
+      [employeeIds]
+    );
+    alertsToday = parseInt(alertRows[0]?.cnt || '0', 10);
+  }
 
   return {
-    employees: employees.sort((a, b) => a.name.localeCompare(b.name)),
+    employees: enriched.sort((a, b) => a.name.localeCompare(b.name)),
     activity,
     metrics: {
-      verified: employees.filter((employee) => employee.current_status === 'VERIFIED').length,
-      away: employees.filter((employee) => employee.current_status === 'AWAY').length,
-      unknown: employees.filter((employee) => employee.current_status === 'UNKNOWN_FACE').length,
-      inactive: employees.filter((employee) => employee.current_status === 'INACTIVE').length,
+      verified: enriched.filter((e) => e.current_status === 'VERIFIED').length,
+      away: enriched.filter((e) => e.current_status === 'AWAY').length,
+      unknown: enriched.filter((e) => e.current_status === 'UNKNOWN_FACE').length,
+      inactive: enriched.filter((e) => e.current_status === 'INACTIVE').length,
       alertsToday
     }
   };
-}
-
-export async function resetStoreForTests(data = emptyStore()) {
-  await writeStore(data);
 }

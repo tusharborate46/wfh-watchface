@@ -1,11 +1,16 @@
 import express from 'express';
 import { auth } from '../middleware/auth.js';
-import { requireRole } from '../middleware/roleCheck.js';
 import { getDashboardSnapshot } from '../store.js';
 
 const router = express.Router();
 
-router.use(auth, requireRole('manager', 'admin'));
+// Require manager role
+router.use(auth, (req, res, next) => {
+  if (req.user.role !== 'manager') {
+    return res.status(403).json({ error: 'Manager access required' });
+  }
+  next();
+});
 
 router.get('/', async (req, res, next) => {
   try {

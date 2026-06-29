@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
-import { api } from '../utils/api.js';
-import EmployeeCard from './EmployeeCard.jsx';
-import StatusBadge from './StatusBadge.jsx';
+import EmployeeCard from '../../components/EmployeeCard.jsx';
+import StatusBadge from '../../components/StatusBadge.jsx';
+import { mgrApi } from '../../utils/api.js';
+
+function Metric({ label, value, tone }) {
+  return (
+    <div className={`metric metric-${tone}`}>
+      <p>{label}</p>
+      <strong>{value ?? 0}</strong>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const [data, setData] = useState({
@@ -14,10 +23,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     let mounted = true;
+    let intervalId;
 
-    const load = async () => {
+    async function load() {
       try {
-        const next = await api('/api/dashboard');
+        const next = await mgrApi('/api/dashboard');
         if (!mounted) return;
         setData(next);
         setError('');
@@ -28,14 +38,14 @@ export default function Dashboard() {
       } finally {
         if (mounted) setLoading(false);
       }
-    };
+    }
 
     load();
-    const id = setInterval(load, 5000);
+    intervalId = setInterval(load, 60_000); // refresh every 60 seconds
 
     return () => {
       mounted = false;
-      clearInterval(id);
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -44,9 +54,9 @@ export default function Dashboard() {
       <div className="section-heading">
         <div>
           <p className="eyebrow">Manager dashboard</p>
-          <h1>Team verification status</h1>
+          <h1>Team Verification Status</h1>
         </div>
-        <p className="muted small">Refreshes every 5 seconds</p>
+        <p className="muted small">Refreshes every 60 seconds</p>
       </div>
 
       {error && <p className="error-box">{error}</p>}
@@ -55,6 +65,7 @@ export default function Dashboard() {
         <p className="muted loading">Loading...</p>
       ) : (
         <>
+          {/* Summary metrics */}
           <section className="metrics-grid">
             <Metric label="Verified" value={data.metrics.verified} tone="green" />
             <Metric label="Away / on break" value={data.metrics.away} tone="yellow" />
@@ -63,15 +74,19 @@ export default function Dashboard() {
             <Metric label="Alerts today" value={data.metrics.alertsToday} tone="red" />
           </section>
 
+          {/* Employee grid */}
           <section className="employee-grid">
-            {data.employees.length === 0 && <p className="muted">No employees found.</p>}
+            {data.employees.length === 0 && (
+              <p className="muted">No employees found. Add employees in the Employees tab.</p>
+            )}
             {data.employees.map((employee) => (
               <EmployeeCard key={employee.id} employee={employee} />
             ))}
           </section>
 
+          {/* Activity log */}
           <section className="table-section">
-            <h2>Activity log</h2>
+            <h2>Activity Log</h2>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -87,11 +102,11 @@ export default function Dashboard() {
                       <td colSpan={3}>No activity recorded today.</td>
                     </tr>
                   )}
-                  {data.activity.map((activity) => (
-                    <tr key={activity.id}>
-                      <td>{new Date(activity.checked_at).toLocaleString()}</td>
-                      <td>{activity.name}</td>
-                      <td><StatusBadge status={activity.status} /></td>
+                  {data.activity.map((item) => (
+                    <tr key={item.id}>
+                      <td>{new Date(item.checked_at).toLocaleString()}</td>
+                      <td>{item.name}</td>
+                      <td><StatusBadge status={item.status} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -101,14 +116,5 @@ export default function Dashboard() {
         </>
       )}
     </main>
-  );
-}
-
-function Metric({ label, value, tone }) {
-  return (
-    <div className={`metric metric-${tone}`}>
-      <p>{label}</p>
-      <strong>{value ?? 0}</strong>
-    </div>
   );
 }

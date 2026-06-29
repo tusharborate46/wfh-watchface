@@ -4,6 +4,7 @@ import express from 'express';
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import enrollmentRoutes from './routes/enrollment.js';
+import managerRoutes from './routes/manager.js';
 import statusRoutes from './routes/status.js';
 
 const app = express();
@@ -19,6 +20,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/enrollment', enrollmentRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/manager', managerRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

@@ -1,102 +1,176 @@
-import React, { useState } from 'react';
+import React, { useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
-import Dashboard from './components/Dashboard.jsx';
-import EnrollPage from './components/EnrollPage.jsx';
-import LoginPage from './components/LoginPage.jsx';
-import SelfView from './components/SelfView.jsx';
-import Settings from './components/Settings.jsx';
-import { useFaceVerification } from './hooks/useFaceVerification.js';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+
+import EmployeeNavbar from './components/EmployeeNavbar.jsx';
+import ManagerNavbar from './components/ManagerNavbar.jsx';
+import VerificationIndicator from './components/VerificationIndicator.jsx';
+
+import { useAuth } from './hooks/useAuth.js';
+import { useAutoVerification } from './hooks/useAutoVerification.js';
+
+import Landing from './pages/Landing.jsx';
+import EmployeeLogin from './pages/auth/EmployeeLogin.jsx';
+import ManagerLogin from './pages/auth/ManagerLogin.jsx';
+import Enroll from './pages/employee/Enroll.jsx';
+import MyStatus from './pages/employee/MyStatus.jsx';
+import EmployeeSettings from './pages/employee/Settings.jsx';
+import ManagerDashboard from './pages/manager/Dashboard.jsx';
+import Alerts from './pages/manager/Alerts.jsx';
+import Employees from './pages/manager/Employees.jsx';
+
 import './index.css';
 
-function readSession() {
-  return {
-    token: localStorage.getItem('token') || '',
-    employeeId: localStorage.getItem('employeeId') || '',
-    role: localStorage.getItem('role') || ''
-  };
+// ─── Protected Route ──────────────────────────────────────────────────────────
+
+function ProtectedEmployeeRoute({ isAuthenticated, children }) {
+  return isAuthenticated ? children : <Navigate to="/employee/login" replace />;
 }
 
-function PrivateRoute({ children, token }) {
-  return token ? children : <Navigate to="/login" replace />;
+function ProtectedManagerRoute({ isAuthenticated, children }) {
+  return isAuthenticated ? children : <Navigate to="/manager/login" replace />;
 }
 
-function App() {
-  const [session, setSession] = useState(readSession);
-  const monitoringEnabled = session.role === 'employee' && Boolean(session.token);
-  const { cameraActive, isChecking, runCheck, lastStatus, message } = useFaceVerification(
-    session.employeeId,
-    monitoringEnabled
+// ─── Employee Section ─────────────────────────────────────────────────────────
+
+function EmployeeSection() {
+  const { token, user, isAuthenticated, login, logout } = useAuth('employee');
+
+  // DOM-attached hidden video element for auto-verification
+  const verifyVideoRef = useRef(null);
+
+  const { cameraActive, isChecking, lastStatus, runCheck } = useAutoVerification(
+    user?.id,
+    isAuthenticated,
+    verifyVideoRef
   );
 
-  function handleLogin({ token, employee }) {
-    localStorage.setItem('token', token);
-    localStorage.setItem('employeeId', employee.id);
-    localStorage.setItem('role', employee.role);
-    setSession({ token, employeeId: employee.id, role: employee.role });
-  }
-
-  function logout() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('employeeId');
-    localStorage.removeItem('role');
-    setSession({ token: '', employeeId: '', role: '' });
-  }
-
-  const home = session.role === 'employee' ? '/me' : '/dashboard';
-
   return (
-    <BrowserRouter>
-      {session.token && (
-        <nav className="app-nav">
-          {session.role !== 'employee' && (
-            <Link className="nav-link" to="/dashboard">Dashboard</Link>
-          )}
-          <Link className="nav-link" to="/enroll">Enroll</Link>
-          <Link className="nav-link" to="/me">My Status</Link>
-          <Link className="nav-link" to="/settings">Settings</Link>
-
-          <div className="nav-actions">
-            {session.role === 'employee' && (
-              <button className="btn" id="run-check-btn" onClick={runCheck} disabled={isChecking} type="button">
-                {isChecking ? 'Checking...' : 'Run privacy check'}
-              </button>
-            )}
-
-            {cameraActive && (
-              <span className="camera-indicator">
-                <span />
-                Camera active
-              </span>
-            )}
-
-            {session.role === 'employee' && lastStatus && (
-              <span className="last-status">Last: {lastStatus.replaceAll('_', ' ')}</span>
-            )}
-
-            <button className="link-button" id="logout-btn" onClick={logout} type="button">
-              Logout
-            </button>
-          </div>
-        </nav>
+    <>
+      {/* Hidden video for auto-verification — must always be in DOM */}
+      {isAuthenticated && (
+        <video
+          ref={verifyVideoRef}
+          style={{ display: 'none' }}
+          autoPlay
+          muted
+          playsInline
+          aria-hidden="true"
+        />
       )}
 
-      {message && session.role === 'employee' && (
-        <div className="mx-auto mt-4 max-w-4xl px-6">
-          <p className="notice">{message}</p>
-        </div>
+      {isAuthenticated && (
+        <EmployeeNavbar user={user} onLogout={logout} cameraActive={cameraActive || isChecking} />
       )}
 
       <Routes>
         <Route
-          path="/login"
-          element={session.token ? <Navigate to={home} replace /> : <LoginPage onLogin={handleLogin} />}
+          path="login"
+          element={
+            isAuthenticated
+              ? <Navigate to="/employee/status" replace />
+              : <EmployeeLogin onLogin={login} />
+          }
         />
-        <Route path="/dashboard" element={<PrivateRoute token={session.token}><Dashboard /></PrivateRoute>} />
-        <Route path="/enroll" element={<PrivateRoute token={session.token}><EnrollPage runCheck={runCheck} /></PrivateRoute>} />
-        <Route path="/me" element={<PrivateRoute token={session.token}><SelfView employeeId={session.employeeId} lastStatus={lastStatus} /></PrivateRoute>} />
-        <Route path="/settings" element={<PrivateRoute token={session.token}><Settings /></PrivateRoute>} />
-        <Route path="*" element={<Navigate to={session.token ? home : '/login'} replace />} />
+        <Route
+          path="enroll"
+          element={
+            <ProtectedEmployeeRoute isAuthenticated={isAuthenticated}>
+              <Enroll runCheck={runCheck} />
+            </ProtectedEmployeeRoute>
+          }
+        />
+        <Route
+          path="status"
+          element={
+            <ProtectedEmployeeRoute isAuthenticated={isAuthenticated}>
+              <MyStatus employeeId={user?.id} lastStatus={lastStatus} />
+            </ProtectedEmployeeRoute>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <ProtectedEmployeeRoute isAuthenticated={isAuthenticated}>
+              <EmployeeSettings onLogout={logout} />
+            </ProtectedEmployeeRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to={isAuthenticated ? '/employee/status' : '/employee/login'} replace />} />
+      </Routes>
+
+      <VerificationIndicator active={cameraActive || isChecking} />
+    </>
+  );
+}
+
+// ─── Manager Section ──────────────────────────────────────────────────────────
+
+function ManagerSection() {
+  const { token, user, isAuthenticated, login, logout } = useAuth('manager');
+
+  return (
+    <>
+      {isAuthenticated && (
+        <ManagerNavbar user={user} onLogout={logout} />
+      )}
+
+      <Routes>
+        <Route
+          path="login"
+          element={
+            isAuthenticated
+              ? <Navigate to="/manager/dashboard" replace />
+              : <ManagerLogin onLogin={login} />
+          }
+        />
+        <Route
+          path="dashboard"
+          element={
+            <ProtectedManagerRoute isAuthenticated={isAuthenticated}>
+              <ManagerDashboard />
+            </ProtectedManagerRoute>
+          }
+        />
+        <Route
+          path="alerts"
+          element={
+            <ProtectedManagerRoute isAuthenticated={isAuthenticated}>
+              <Alerts />
+            </ProtectedManagerRoute>
+          }
+        />
+        <Route
+          path="employees"
+          element={
+            <ProtectedManagerRoute isAuthenticated={isAuthenticated}>
+              <Employees managerUser={user} />
+            </ProtectedManagerRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to={isAuthenticated ? '/manager/dashboard' : '/manager/login'} replace />} />
+      </Routes>
+    </>
+  );
+}
+
+// ─── Root App ─────────────────────────────────────────────────────────────────
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Landing */}
+        <Route path="/" element={<Landing />} />
+
+        {/* Employee section */}
+        <Route path="/employee/*" element={<EmployeeSection />} />
+
+        {/* Manager section */}
+        <Route path="/manager/*" element={<ManagerSection />} />
+
+        {/* Catch-all → landing */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
